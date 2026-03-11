@@ -34,6 +34,7 @@ export default defineEventHandler(async (event) => {
           '/price BTCUSDT — Get current price\n' +
           '/analyze BTCUSDT — Run AI analysis\n' +
           '/analyze BTCUSDT 4h — Analysis with timeframe\n' +
+          '/account — Check balance & API permissions\n' +
           '/summary — Market summary\n' +
           '/pairs — List tracked pairs\n' +
           '/report — Full report for all pairs\n' +
@@ -50,6 +51,57 @@ export default defineEventHandler(async (event) => {
       case '/chatid':
         await telegram.sendMessage(`Your Chat ID: <code>${chatId}</code>`, chatId)
         break
+
+      case '/account':
+      case '/balance': {
+        try {
+          const { useBinance } = await import('../../services/binance')
+          const binance = useBinance()
+          const account = await binance.getAccountInfo()
+          const permissions = await binance.getApiKeyPermissions().catch(() => null)
+
+          let totalUsdt = 0
+          const balanceLines: string[] = []
+
+          for (const bal of account.balances) {
+            if (['USDT', 'BUSD', 'FDUSD'].includes(bal.asset)) {
+              totalUsdt += bal.total
+              balanceLines.push(`  ${bal.asset}: $${bal.total.toFixed(2)}`)
+            } else if (bal.total > 0) {
+              try {
+                const ticker = await binance.getTicker(`${bal.asset}USDT`)
+                const usdValue = bal.total * ticker.price
+                totalUsdt += usdValue
+                balanceLines.push(`  ${bal.asset}: ${bal.total.toFixed(6)} (~$${usdValue.toFixed(2)})`)
+              } catch {
+                balanceLines.push(`  ${bal.asset}: ${bal.total.toFixed(6)}`)
+              }
+            }
+          }
+
+          let msg = `💰 <b>Account Info</b>\n\n`
+          msg += `Type: ${account.accountType}\n`
+          msg += `Can Trade: ${account.canTrade ? '✅' : '❌'}\n\n`
+
+          if (permissions) {
+            msg += `<b>API Permissions:</b>\n`
+            msg += `  Spot Trading: ${permissions.enableSpotAndMarginTrading ? '✅' : '❌'}\n`
+            msg += `  Futures: ${permissions.enableFutures ? '✅' : '❌'}\n`
+            msg += `  Reading: ${permissions.enableReading ? '✅' : '❌'}\n`
+            msg += `  Withdrawals: ${permissions.enableWithdrawals ? '✅' : '❌'}\n\n`
+          }
+
+          msg += `<b>Balances:</b>\n`
+          msg += balanceLines.length ? balanceLines.join('\n') : '  No balances'
+          msg += `\n\n<b>Total: ~$${totalUsdt.toFixed(2)} USDT</b>`
+          msg += `\n3% Risk = $${(totalUsdt * 0.03).toFixed(2)} per trade`
+
+          await telegram.sendMessage(msg, chatId)
+        } catch (err: any) {
+          await telegram.sendMessage(`Account check failed: ${err.message}`, chatId)
+        }
+        break
+      }
 
       case '/rules':
         await telegram.sendMessage(
