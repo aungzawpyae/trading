@@ -44,11 +44,11 @@ export const TRADING_RULES_PROMPT = `
 - Know your trading plan before entering
 - Identify Support and Resistance — know what you will do at each level
 
-### Position Sizing Formula (Capital: $100)
-- Risk Amount = $100 × 3% = $3 max risk per trade
-- Position Size = $3 / (Entry Price - Stop Loss Price)
+### Position Sizing Formula
+- Risk Amount = Available Capital × 3%
+- Position Size = Risk Amount / (Entry Price - Stop Loss Price)
 - Entry only AFTER SL, TP, and Position Size are calculated
-- ALWAYS calculate position size based on $100 capital
+- Auto-trader uses actual futures wallet balance for position sizing
 `
 
 export type RetracementType = typeof TRADING_RULES.retracementTypes[number]

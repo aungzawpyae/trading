@@ -215,6 +215,86 @@ export function useBinance() {
     }))
   }
 
+  // ─── Futures Trading (Demo) ───
+
+  async function futuresSetLeverage(symbol: string, leverage: number): Promise<any> {
+    const query = signedQuery({ symbol, leverage })
+    return (globalThis.$fetch as any)(`${futuresBaseUrl}/fapi/v1/leverage`, {
+      method: 'POST',
+      query,
+      headers: signedHeaders(),
+    })
+  }
+
+  async function futuresMarketOrder(symbol: string, side: 'BUY' | 'SELL', quantity: number): Promise<any> {
+    const query = signedQuery({
+      symbol,
+      side,
+      type: 'MARKET',
+      quantity: quantity.toString(),
+    })
+    return (globalThis.$fetch as any)(`${futuresBaseUrl}/fapi/v1/order`, {
+      method: 'POST',
+      query,
+      headers: signedHeaders(),
+    })
+  }
+
+  async function futuresStopLossOrder(symbol: string, side: 'BUY' | 'SELL', quantity: number, stopPrice: number): Promise<any> {
+    const query = signedQuery({
+      symbol,
+      side,
+      type: 'STOP_MARKET',
+      quantity: quantity.toString(),
+      stopPrice: stopPrice.toString(),
+      closePosition: 'true',
+    })
+    return (globalThis.$fetch as any)(`${futuresBaseUrl}/fapi/v1/order`, {
+      method: 'POST',
+      query,
+      headers: signedHeaders(),
+    })
+  }
+
+  async function futuresTakeProfitOrder(symbol: string, side: 'BUY' | 'SELL', quantity: number, stopPrice: number): Promise<any> {
+    const query = signedQuery({
+      symbol,
+      side,
+      type: 'TAKE_PROFIT_MARKET',
+      quantity: quantity.toString(),
+      stopPrice: stopPrice.toString(),
+      closePosition: 'true',
+    })
+    return (globalThis.$fetch as any)(`${futuresBaseUrl}/fapi/v1/order`, {
+      method: 'POST',
+      query,
+      headers: signedHeaders(),
+    })
+  }
+
+  async function futuresCancelAllOrders(symbol: string): Promise<any> {
+    const query = signedQuery({ symbol })
+    return (globalThis.$fetch as any)(`${futuresBaseUrl}/fapi/v1/allOpenOrders`, {
+      method: 'DELETE',
+      query,
+      headers: signedHeaders(),
+    })
+  }
+
+  async function getFuturesExchangeInfo(symbol: string): Promise<any> {
+    const data: any = await (globalThis.$fetch as any)(`${futuresBaseUrl}/fapi/v1/exchangeInfo`)
+    const info = data.symbols?.find((s: any) => s.symbol === symbol)
+    if (!info) return null
+
+    const lotSize = info.filters?.find((f: any) => f.filterType === 'LOT_SIZE')
+    const pricePrecision = info.pricePrecision || 2
+    const quantityPrecision = info.quantityPrecision || 3
+    const minQty = lotSize ? parseFloat(lotSize.minQty) : 0.001
+    const stepSize = lotSize ? parseFloat(lotSize.stepSize) : 0.001
+
+    return { pricePrecision, quantityPrecision, minQty, stepSize }
+  }
+
   return {
     getTicker,
     getKlines,
@@ -224,5 +304,11 @@ export function useBinance() {
     getFuturesAccount,
     getFuturesPositions,
     getFuturesOpenOrders,
+    getFuturesExchangeInfo,
+    futuresSetLeverage,
+    futuresMarketOrder,
+    futuresStopLossOrder,
+    futuresTakeProfitOrder,
+    futuresCancelAllOrders,
   }
 }
