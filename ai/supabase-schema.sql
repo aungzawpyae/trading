@@ -79,9 +79,40 @@ CREATE TABLE alerts (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
--- Enable Row Level Security (optional, disable if using service key)
--- ALTER TABLE trading_pairs ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE klines ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE tickers ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE analyses ENABLE ROW LEVEL SECURITY;
--- ALTER TABLE alerts ENABLE ROW LEVEL SECURITY;
+-- Trade Journal (auto-recorded by bot)
+CREATE TABLE trade_journal (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  trading_pair_id UUID NOT NULL REFERENCES trading_pairs(id) ON DELETE CASCADE,
+  symbol VARCHAR(20) NOT NULL,
+  side VARCHAR(5) NOT NULL, -- BUY or SELL
+  status VARCHAR(20) NOT NULL DEFAULT 'open', -- open, closed, cancelled
+  entry_price DECIMAL(18,8) NOT NULL,
+  exit_price DECIMAL(18,8),
+  stop_loss DECIMAL(18,8) NOT NULL,
+  take_profit DECIMAL(18,8) NOT NULL,
+  quantity DECIMAL(24,8) NOT NULL,
+  leverage INTEGER NOT NULL DEFAULT 10,
+  risk_reward DECIMAL(5,2),
+  risk_amount DECIMAL(18,8),
+  pnl DECIMAL(18,8),
+  pnl_percent DECIMAL(8,4),
+  result VARCHAR(10), -- win, loss, breakeven
+  wallet_balance DECIMAL(18,8),
+  interval VARCHAR(5),
+  signal VARCHAR(15),
+  confidence DECIMAL(5,2),
+  entry_notes TEXT,
+  exit_notes TEXT,
+  order_flow TEXT,
+  analysis_id UUID REFERENCES analyses(id),
+  order_id VARCHAR(50),
+  sl_order_id VARCHAR(50),
+  tp_order_id VARCHAR(50),
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  closed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+CREATE INDEX journal_symbol_status ON trade_journal(symbol, status);
+CREATE INDEX journal_opened_at ON trade_journal(opened_at);
+CREATE INDEX journal_result ON trade_journal(result);

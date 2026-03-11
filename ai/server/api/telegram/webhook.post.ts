@@ -43,6 +43,7 @@ export default defineEventHandler(async (event) => {
           '/close BTCUSDT — Close position\n\n' +
           '<b>Account:</b>\n' +
           '/account — Balance & positions\n' +
+          '/journal — Trade journal & stats\n' +
           '/pairs — Tracked pairs\n' +
           '/report — Full report\n' +
           '/rules — Trading rules\n' +
@@ -160,6 +161,31 @@ export default defineEventHandler(async (event) => {
           // Close position
           const order = await binance.futuresMarketOrder(symbol, closeSide as 'BUY' | 'SELL', qty)
 
+          // Update journal
+          const supabase = useDb()
+          const { data: journalEntry } = await supabase
+            .from('trade_journal')
+            .select('*')
+            .eq('symbol', symbol)
+            .eq('status', 'open')
+            .order('opened_at', { ascending: false })
+            .limit(1)
+            .single()
+
+          if (journalEntry) {
+            const pnl = pos.unrealizedProfit
+            const pnlPct = ((pos.markPrice - pos.entryPrice) / pos.entryPrice) * 100 * (pos.positionAmt > 0 ? 1 : -1)
+            await supabase.from('trade_journal').update({
+              status: 'closed',
+              exit_price: pos.markPrice,
+              pnl: Math.round(pnl * 100) / 100,
+              pnl_percent: Math.round(pnlPct * 100) / 100,
+              result: pnl > 0 ? 'win' : pnl < 0 ? 'loss' : 'breakeven',
+              exit_notes: 'Manual close via Telegram',
+              closed_at: new Date().toISOString(),
+            }).eq('id', journalEntry.id)
+          }
+
           const pnlEmoji = pos.unrealizedProfit >= 0 ? '🟢' : '🔴'
           await telegram.sendMessage(
             `${pnlEmoji} <b>Position Closed</b>\n\n` +
@@ -167,7 +193,7 @@ export default defineEventHandler(async (event) => {
             `Entry: $${pos.entryPrice}\n` +
             `Exit: $${pos.markPrice}\n` +
             `PnL: $${pos.unrealizedProfit.toFixed(2)}\n` +
-            `Order: ${order.orderId}`,
+            `Recorded in journal`,
             chatId,
           )
         } catch (err: any) {
@@ -176,14 +202,58 @@ export default defineEventHandler(async (event) => {
         break
       }
 
+      case '/journal': {
+        try {
+          const supabase = useDb()
+          const { data: trades } = await supabase
+            .from('trade_journal')
+            .select('*')
+            .order('opened_at', { ascending: false })
+            .limit(10)
+
+          const closed = (trades || []).filter((t: any) => t.status === 'closed')
+          const wins = closed.filter((t: any) => t.result === 'win').length
+          const losses = closed.filter((t: any) => t.result === 'loss').length
+          const totalPnl = closed.reduce((s: number, t: any) => s + (parseFloat(t.pnl) || 0), 0)
+          const winRate = closed.length > 0 ? ((wins / closed.length) * 100).toFixed(0) : '0'
+
+          let msg = `📓 <b>TRADE JOURNAL</b>\n${'─'.repeat(25)}\n\n`
+          msg += `Win Rate: <b>${winRate}%</b> (${wins}W / ${losses}L)\n`
+          msg += `Total PnL: <b>$${totalPnl.toFixed(2)}</b>\n\n`
+
+          if (!trades?.length) {
+            msg += 'No trades recorded yet.'
+          } else {
+            for (const t of trades) {
+              const emoji = t.result === 'win' ? '🟢' : t.result === 'loss' ? '🔴' : '🔵'
+              const side = t.side === 'BUY' ? 'L' : 'S'
+              msg += `${emoji} <b>${t.symbol}</b> ${side} ${t.leverage}x`
+              if (t.pnl !== null) {
+                msg += ` → $${parseFloat(t.pnl).toFixed(2)}`
+              } else {
+                msg += ` → OPEN`
+              }
+              msg += `\n  $${parseFloat(t.entry_price).toLocaleString()}`
+              if (t.exit_price) msg += ` → $${parseFloat(t.exit_price).toLocaleString()}`
+              if (t.entry_notes) msg += `\n  📝 ${t.entry_notes.substring(0, 80)}`
+              msg += `\n\n`
+            }
+          }
+
+          await telegram.sendMessage(msg, chatId)
+        } catch (err: any) {
+          await telegram.sendMessage(`Journal failed: ${err.message}`, chatId)
+        }
+        break
+      }
+
       case '/reset_trading': {
         const supabase = useDb()
-        // Clear recent loss records
         await supabase
-          .from('alerts')
+          .from('trade_journal')
           .delete()
-          .eq('type', 'trade_executed')
-          .gte('created_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
+          .eq('result', 'loss')
+          .gte('closed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString())
 
         await telegram.sendMessage('✅ <b>Trading Reset</b>\n\nLoss counter cleared. Auto-trading re-enabled.', chatId)
         break

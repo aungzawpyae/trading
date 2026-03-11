@@ -22,16 +22,7 @@ export function useAutoTrader() {
   const analyzer = useAnalyzer()
   const telegram = useTelegram()
 
-  /**
-   * Full auto-trade flow:
-   * 1. Fetch real market data
-   * 2. Run AI analysis
-   * 3. Validate trade checklist
-   * 4. Calculate position size from actual futures balance
-   * 5. Execute market order + SL + TP on demo futures
-   * 6. Alert Telegram with full trade details
-   */
-  async function autoAnalyzeAndTrade(pairId: string, symbol: string, interval = '1h'): Promise<any> {
+  async function autoAnalyzeAndTrade(pairId: string, symbol: string, interval = '15m'): Promise<any> {
     const supabase = useDb()
 
     // Step 1: Check for existing open position
@@ -44,19 +35,16 @@ export function useAutoTrader() {
       return { skipped: true, reason: 'existing_position', position: existingPosition }
     }
 
-    // Step 2: Check consecutive losses (3 losses → stop)
-    const { data: recentTrades } = await supabase
-      .from('alerts')
-      .select('*')
-      .eq('type', 'trade_executed')
-      .order('created_at', { ascending: false })
+    // Step 2: Check consecutive losses from journal
+    const { data: recentJournal } = await supabase
+      .from('trade_journal')
+      .select('result')
+      .eq('status', 'closed')
+      .order('closed_at', { ascending: false })
       .limit(3)
 
-    const consecutiveLosses = (recentTrades || [])
-      .filter((t: any) => {
-        const data = JSON.parse(t.message || '{}')
-        return data.result === 'loss'
-      }).length
+    const consecutiveLosses = (recentJournal || [])
+      .filter((t: any) => t.result === 'loss').length
 
     if (consecutiveLosses >= TRADING_RULES.maxConsecutiveLosses) {
       const msg = `🛑 <b>AUTO-TRADE BLOCKED</b>\n\n${symbol}: 3 consecutive losses detected.\nTrading paused. Reset required.\n\nSend /reset_trading to resume.`
@@ -64,31 +52,30 @@ export function useAutoTrader() {
       return { skipped: true, reason: 'consecutive_losses', losses: consecutiveLosses }
     }
 
-    // Step 3: Run AI analysis
+    // Step 3: Run AI analysis (day trader mode)
     const analysis = await analyzer.analyzePair(pairId, symbol, interval)
     const raw = analysis.raw_response || {}
     const checklist = raw.trade_checklist || {}
 
-    // Step 4: Validate — only trade on actionable signals with passing checklist
+    // Step 4: Validate
     const actionableSignals = ['strong_buy', 'buy', 'sell', 'strong_sell']
     if (!actionableSignals.includes(analysis.signal)) {
       console.log(`${symbol}: Signal is ${analysis.signal}, no trade.`)
       return { skipped: true, reason: 'no_signal', signal: analysis.signal }
     }
 
-    // Checklist validation
     if (!checklist.sl_set || !checklist.tp_set) {
-      await telegram.sendMessage(`⚠️ ${symbol} — Signal: ${analysis.signal} but SL/TP not set. Skipping auto-trade.`)
+      await telegram.sendMessage(`⚠️ ${symbol} — Signal: ${analysis.signal} but SL/TP not set. Skipping.`)
       return { skipped: true, reason: 'checklist_failed', missing: 'sl_tp' }
     }
 
     if (!checklist.rr_above_3) {
-      await telegram.sendMessage(`⚠️ ${symbol} — R:R below 1:3. Skipping auto-trade.`)
+      await telegram.sendMessage(`⚠️ ${symbol} — R:R below 1:3. Skipping.`)
       return { skipped: true, reason: 'checklist_failed', missing: 'rr_ratio' }
     }
 
     if (!checklist.no_fomo) {
-      await telegram.sendMessage(`⚠️ ${symbol} — FOMO detected by AI. Skipping auto-trade.`)
+      await telegram.sendMessage(`⚠️ ${symbol} — FOMO detected. Skipping.`)
       return { skipped: true, reason: 'checklist_failed', missing: 'fomo' }
     }
 
@@ -98,93 +85,87 @@ export function useAutoTrader() {
       return { skipped: true, reason: 'missing_levels' }
     }
 
-    // Step 5: Calculate position size from actual balance
+    // Step 5: Calculate position size
     const entryPrice = parseFloat(keyLevels.entry)
     const stopLoss = parseFloat(keyLevels.stop_loss)
     const takeProfit = parseFloat(keyLevels.take_profit)
     const slDistance = Math.abs(entryPrice - stopLoss)
 
-    if (slDistance === 0) {
-      return { skipped: true, reason: 'invalid_sl_distance' }
-    }
+    if (slDistance === 0) return { skipped: true, reason: 'invalid_sl_distance' }
 
     const futuresAccount = await binance.getFuturesAccount()
     const walletBalance = futuresAccount.availableBalance
-    const riskAmount = walletBalance * (TRADING_RULES.maxRiskPerTrade / 100) // 3%
+    const riskAmount = walletBalance * (TRADING_RULES.maxRiskPerTrade / 100)
     const rr = Math.abs(takeProfit - entryPrice) / slDistance
 
-    // Get symbol precision
     const exchangeInfo = await binance.getFuturesExchangeInfo(symbol)
     const quantityPrecision = exchangeInfo?.quantityPrecision || 3
-    const leverage = 10 // Default leverage
+    const leverage = 10
 
-    // Position size = risk amount * leverage / SL distance
     let quantity = (riskAmount * leverage) / slDistance
     quantity = parseFloat(quantity.toFixed(quantityPrecision))
 
     if (exchangeInfo?.minQty && quantity < exchangeInfo.minQty) {
-      await telegram.sendMessage(`⚠️ ${symbol} — Position size ${quantity} below minimum ${exchangeInfo.minQty}. Skipping.`)
+      await telegram.sendMessage(`⚠️ ${symbol} — Position size ${quantity} below minimum. Skipping.`)
       return { skipped: true, reason: 'below_min_qty' }
     }
 
-    // Determine side
     const isBuy = ['strong_buy', 'buy'].includes(analysis.signal)
     const side: 'BUY' | 'SELL' = isBuy ? 'BUY' : 'SELL'
     const closeSide: 'BUY' | 'SELL' = isBuy ? 'SELL' : 'BUY'
 
     // Step 6: Execute trade
     try {
-      // Set leverage
       await binance.futuresSetLeverage(symbol, leverage).catch(() => {})
 
-      // Place market order
       console.log(`🚀 Auto-trade: ${side} ${quantity} ${symbol} @ market`)
       const order = await binance.futuresMarketOrder(symbol, side, quantity)
 
-      // Place SL order
       const slOrder = await binance.futuresStopLossOrder(symbol, closeSide, quantity, stopLoss).catch((err: any) => {
         console.error(`SL order failed: ${err.message}`)
         return null
       })
 
-      // Place TP order
       const tpOrder = await binance.futuresTakeProfitOrder(symbol, closeSide, quantity, takeProfit).catch((err: any) => {
         console.error(`TP order failed: ${err.message}`)
         return null
       })
 
       const execution: TradeExecution = {
-        symbol,
-        side,
-        quantity,
-        entryPrice,
-        stopLoss,
-        takeProfit,
-        leverage,
+        symbol, side, quantity, entryPrice, stopLoss, takeProfit, leverage,
         riskReward: Math.round(rr * 100) / 100,
         orderId: order.orderId,
         slOrderId: slOrder?.orderId || null,
         tpOrderId: tpOrder?.orderId || null,
       }
 
-      // Save trade to DB
-      await supabase.from('alerts').insert({
+      // Step 7: Write Trade Journal
+      await supabase.from('trade_journal').insert({
         trading_pair_id: pairId,
-        type: 'trade_executed',
-        message: JSON.stringify({
-          ...execution,
-          analysis_id: analysis.id,
-          confidence: analysis.confidence,
-          summary: analysis.summary,
-          wallet_balance: walletBalance,
-          risk_amount: riskAmount,
-          timestamp: new Date().toISOString(),
-        }),
-        is_triggered: true,
-        triggered_at: new Date().toISOString(),
+        symbol,
+        side,
+        status: 'open',
+        entry_price: entryPrice,
+        stop_loss: stopLoss,
+        take_profit: takeProfit,
+        quantity,
+        leverage,
+        risk_reward: Math.round(rr * 100) / 100,
+        risk_amount: riskAmount,
+        wallet_balance: walletBalance,
+        interval,
+        signal: analysis.signal,
+        confidence: analysis.confidence,
+        entry_notes: checklist.entry_notes || analysis.summary,
+        order_flow: raw.order_flow || null,
+        analysis_id: analysis.id,
+        order_id: String(order.orderId),
+        sl_order_id: slOrder ? String(slOrder.orderId) : null,
+        tp_order_id: tpOrder ? String(tpOrder.orderId) : null,
+        opened_at: new Date().toISOString(),
       })
 
-      // Step 7: Alert Telegram
+      // Step 8: Alert Telegram
       await sendTradeAlert(execution, analysis, walletBalance, riskAmount)
 
       return { success: true, execution }
@@ -196,6 +177,84 @@ export function useAutoTrader() {
     }
   }
 
+  /**
+   * Check open positions and close/update journal if SL/TP hit
+   */
+  async function checkAndClosePositions(): Promise<any[]> {
+    const supabase = useDb()
+    const results: any[] = []
+
+    // Get open journal entries
+    const { data: openTrades } = await supabase
+      .from('trade_journal')
+      .select('*')
+      .eq('status', 'open')
+
+    if (!openTrades?.length) return results
+
+    // Get current positions
+    const positions = await binance.getFuturesPositions()
+
+    for (const trade of openTrades) {
+      const pos = positions.find((p) => p.symbol === trade.symbol && p.positionAmt !== 0)
+
+      if (!pos) {
+        // Position was closed (SL or TP hit, or manual close)
+        const ticker = await binance.getTicker(trade.symbol)
+        const exitPrice = ticker.price
+        const isBuy = trade.side === 'BUY'
+        const pnl = isBuy
+          ? (exitPrice - parseFloat(trade.entry_price)) * parseFloat(trade.quantity)
+          : (parseFloat(trade.entry_price) - exitPrice) * parseFloat(trade.quantity)
+        const pnlPct = ((exitPrice - parseFloat(trade.entry_price)) / parseFloat(trade.entry_price)) * 100 * (isBuy ? 1 : -1)
+
+        let result: string
+        if (pnl > 0) result = 'win'
+        else if (pnl < 0) result = 'loss'
+        else result = 'breakeven'
+
+        // Determine exit reason
+        let exitNotes = 'Position closed'
+        if (isBuy && exitPrice <= parseFloat(trade.stop_loss)) exitNotes = 'Stop Loss hit'
+        else if (isBuy && exitPrice >= parseFloat(trade.take_profit)) exitNotes = 'Take Profit hit'
+        else if (!isBuy && exitPrice >= parseFloat(trade.stop_loss)) exitNotes = 'Stop Loss hit'
+        else if (!isBuy && exitPrice <= parseFloat(trade.take_profit)) exitNotes = 'Take Profit hit'
+
+        // Update journal
+        await supabase
+          .from('trade_journal')
+          .update({
+            status: 'closed',
+            exit_price: exitPrice,
+            pnl: Math.round(pnl * 100) / 100,
+            pnl_percent: Math.round(pnlPct * 100) / 100,
+            result,
+            exit_notes: exitNotes,
+            closed_at: new Date().toISOString(),
+          })
+          .eq('id', trade.id)
+
+        // Alert Telegram
+        const emoji = result === 'win' ? '🟢' : result === 'loss' ? '🔴' : '⚪'
+        let msg = `${emoji} <b>TRADE CLOSED — ${trade.symbol}</b>\n`
+        msg += `${'─'.repeat(25)}\n\n`
+        msg += `Side: ${trade.side === 'BUY' ? 'LONG' : 'SHORT'}\n`
+        msg += `Entry: $${parseFloat(trade.entry_price).toLocaleString()}\n`
+        msg += `Exit: $${exitPrice.toLocaleString()}\n`
+        msg += `PnL: $${pnl.toFixed(2)} (${pnlPct.toFixed(2)}%)\n`
+        msg += `Result: <b>${result.toUpperCase()}</b>\n`
+        msg += `Reason: ${exitNotes}\n`
+        msg += `\n📝 Entry: ${trade.entry_notes || '-'}`
+
+        await telegram.sendMessage(msg)
+
+        results.push({ symbol: trade.symbol, result, pnl, exitNotes })
+      }
+    }
+
+    return results
+  }
+
   async function sendTradeAlert(exec: TradeExecution, analysis: any, balance: number, riskAmt: number) {
     const raw = analysis.raw_response || {}
     const signalEmoji = exec.side === 'BUY' ? '🟢' : '🔴'
@@ -203,7 +262,6 @@ export function useAutoTrader() {
 
     let msg = `${signalEmoji}${signalEmoji} <b>AUTO-TRADE EXECUTED</b> ${signalEmoji}${signalEmoji}\n`
     msg += `${'═'.repeat(28)}\n\n`
-
     msg += `📊 <b>${exec.symbol}</b> — ${directionEmoji}\n`
     msg += `Signal: <b>${analysis.signal.replace('_', ' ').toUpperCase()}</b> (${parseFloat(analysis.confidence || '0').toFixed(0)}%)\n\n`
 
@@ -228,20 +286,11 @@ export function useAutoTrader() {
       msg += `🔄 <b>Order Flow:</b> ${raw.order_flow}\n\n`
     }
 
-    msg += `${analysis.summary}\n\n`
-
-    msg += `<b>Order IDs:</b>\n`
-    msg += `  Market: ${exec.orderId}\n`
-    msg += `  SL: ${exec.slOrderId || 'FAILED'}\n`
-    msg += `  TP: ${exec.tpOrderId || 'FAILED'}`
-
+    msg += `${analysis.summary}`
     await telegram.sendMessage(msg)
   }
 
-  /**
-   * Run auto-trading for all active pairs
-   */
-  async function autoTradeAllPairs(interval = '1h'): Promise<any[]> {
+  async function autoTradeAllPairs(interval = '15m'): Promise<any[]> {
     const supabase = useDb()
     const { data: pairs } = await supabase
       .from('trading_pairs')
@@ -250,7 +299,10 @@ export function useAutoTrader() {
 
     const results = []
 
-    await telegram.sendMessage(`🤖 <b>Auto-Trade Scan Starting</b>\nPairs: ${(pairs || []).length} | Interval: ${interval}`)
+    // First check and close any finished positions
+    await checkAndClosePositions()
+
+    await telegram.sendMessage(`🤖 <b>Day Trade Scan</b>\nPairs: ${(pairs || []).length} | TF: ${interval}`)
 
     for (const pair of pairs || []) {
       try {
@@ -262,27 +314,15 @@ export function useAutoTrader() {
       }
     }
 
-    // Summary
     const executed = results.filter((r) => r.success)
     const skipped = results.filter((r) => r.skipped)
-    const failed = results.filter((r) => r.error)
 
-    let summary = `📋 <b>Auto-Trade Scan Complete</b>\n\n`
-    summary += `✅ Executed: ${executed.length}\n`
-    summary += `⏭️ Skipped: ${skipped.length}\n`
-    summary += `❌ Failed: ${failed.length}\n`
-
-    if (executed.length > 0) {
-      summary += `\n<b>Trades:</b>\n`
-      for (const r of executed) {
-        summary += `  ${r.symbol}: ${r.execution.side} ${r.execution.quantity} @ $${r.execution.entryPrice}\n`
-      }
-    }
-
+    let summary = `📋 <b>Scan Complete</b>\n`
+    summary += `✅ Executed: ${executed.length} | ⏭️ Skipped: ${skipped.length}`
     await telegram.sendMessage(summary)
 
     return results
   }
 
-  return { autoAnalyzeAndTrade, autoTradeAllPairs }
+  return { autoAnalyzeAndTrade, autoTradeAllPairs, checkAndClosePositions }
 }
