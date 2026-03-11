@@ -1,0 +1,35 @@
+{
+  "name": "trading-ai",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "nuxt build",
+    "dev": "nuxt dev",
+    "generate": "nuxt generate",
+    "preview": "nuxt preview",
+    "postinstall": "nuxt prepare",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:studio": "drizzle-kit studio"
+  },
+  "dependencies": {
+    "@pinia/nuxt": "^0.11.3",
+    "@supabase/supabase-js": "^2.49.0",
+    "drizzle-orm": "^0.38.0",
+    "nuxt": "^3.16.0",
+    "pinia": "^3.0.4",
+    "postgres": "^3.4.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.5.0",
+    "zod": "^3.24.0"
+  },
+  "devDependencies": {
+    "@nuxt/devtools": "^2.0.0",
+    "@tailwindcss/postcss": "^4.2.1",
+    "autoprefixer": "^10.4.27",
+    "drizzle-kit": "^0.30.0",
+    "postcss": "^8.5.8",
+    "tailwindcss": "^4.2.1",
+    "typescript": "^5.7.0"
+  }
+}
