@@ -53,22 +53,61 @@ export function useTelegram() {
 
     const emoji = signalEmoji[analysis.signal] || '⚪'
     const confidence = parseFloat(analysis.confidence || '0').toFixed(0)
-    const raw = analysis.rawResponse || {}
+    const raw = analysis.raw_response || {}
 
     let msg = `${emoji} <b>${symbol}</b> — <b>${analysis.signal.replace('_', ' ').toUpperCase()}</b>\n`
-    msg += `Confidence: ${confidence}%\n`
-    msg += `\n${analysis.summary}\n`
+    msg += `Confidence: ${confidence}% | Risk: ${raw.risk || 'N/A'}\n`
+    msg += `Trend: ${raw.trend || 'N/A'}`
+    if (raw.retracement_type && raw.retracement_type !== 'none') {
+      msg += ` | Retracement: ${raw.retracement_type.replace('_', ' ')}`
+    }
+    msg += `\n\n${analysis.summary}\n`
 
     if (raw.key_levels) {
-      msg += `\n📊 <b>Key Levels</b>\n`
+      msg += `\n📊 <b>Trade Setup</b>\n`
+      if (raw.key_levels.entry) msg += `  Entry: $${parseFloat(raw.key_levels.entry).toLocaleString()}\n`
+      if (raw.key_levels.stop_loss) msg += `  🛑 SL: $${parseFloat(raw.key_levels.stop_loss).toLocaleString()}\n`
+      if (raw.key_levels.take_profit) msg += `  🎯 TP: $${parseFloat(raw.key_levels.take_profit).toLocaleString()}\n`
       if (raw.key_levels.support) msg += `  Support: $${parseFloat(raw.key_levels.support).toLocaleString()}\n`
       if (raw.key_levels.resistance) msg += `  Resistance: $${parseFloat(raw.key_levels.resistance).toLocaleString()}\n`
-      if (raw.key_levels.stop_loss) msg += `  Stop Loss: $${parseFloat(raw.key_levels.stop_loss).toLocaleString()}\n`
-      if (raw.key_levels.take_profit) msg += `  Take Profit: $${parseFloat(raw.key_levels.take_profit).toLocaleString()}\n`
+
+      // Calculate R:R
+      const entry = parseFloat(raw.key_levels.entry || raw.key_levels.support || 0)
+      const sl = parseFloat(raw.key_levels.stop_loss || 0)
+      const tp = parseFloat(raw.key_levels.take_profit || 0)
+      if (entry && sl && tp) {
+        const rr = Math.abs(tp - entry) / Math.abs(entry - sl)
+        msg += `  R:R = 1:${rr.toFixed(1)}\n`
+      }
     }
 
-    if (raw.trend) msg += `\nTrend: ${raw.trend}`
-    if (raw.risk) msg += ` | Risk: ${raw.risk}`
+    if (raw.order_flow) {
+      msg += `\n🔄 <b>Order Flow</b>\n${raw.order_flow}\n`
+    }
+
+    if (raw.price_action) {
+      msg += `\n📈 <b>Price Action</b>\n`
+      if (raw.price_action.wick_analysis) msg += `  Wick: ${raw.price_action.wick_analysis}\n`
+      if (raw.price_action.momentum_direction) msg += `  Momentum: ${raw.price_action.momentum_direction}\n`
+      if (raw.price_action.key_observation) msg += `  Key: ${raw.price_action.key_observation}\n`
+    }
+
+    if (raw.position_size_advice) {
+      msg += `\n💰 <b>Position Size</b>\n${raw.position_size_advice}\n`
+    }
+
+    // Trade Checklist
+    if (raw.trade_checklist) {
+      const c = raw.trade_checklist
+      msg += `\n✅ <b>Trade Checklist</b>\n`
+      msg += `  ${c.sl_set ? '✅' : '❌'} SL Set\n`
+      msg += `  ${c.tp_set ? '✅' : '❌'} TP Set\n`
+      msg += `  ${c.rr_above_3 ? '✅' : '❌'} R:R >= 1:3\n`
+      msg += `  ${c.trend_aligned ? '✅' : '❌'} Trend Aligned\n`
+      msg += `  ${c.no_fomo ? '✅' : '❌'} No FOMO\n`
+      msg += `  ${c.rejection_confirmed ? '✅' : '❌'} Rejection Confirmed\n`
+      if (c.entry_notes) msg += `\n📝 <b>Notes:</b> ${c.entry_notes}\n`
+    }
 
     return msg
   }
@@ -112,6 +151,125 @@ export function useTelegram() {
     return sendMessage(msg, chatId)
   }
 
+  // ─── Trade Confirmation ───
+
+  async function sendTradeConfirmation(symbol: string, analysis: any, chatId?: string): Promise<any> {
+    const targetChat = chatId || defaultChatId
+    if (!botToken || !targetChat) return null
+
+    const raw = analysis.raw_response || {}
+    const signal = analysis.signal?.replace('_', ' ').toUpperCase() || 'UNKNOWN'
+    const kl = raw.key_levels || {}
+
+    let msg = `⚠️ <b>TRADE CONFIRMATION REQUIRED</b>\n\n`
+    msg += `📊 <b>${symbol}</b> — ${signal}\n`
+    msg += `Confidence: ${parseFloat(analysis.confidence || '0').toFixed(0)}%\n\n`
+
+    if (kl.entry) msg += `Entry: $${parseFloat(kl.entry).toLocaleString()}\n`
+    if (kl.stop_loss) msg += `🛑 SL: $${parseFloat(kl.stop_loss).toLocaleString()}\n`
+    if (kl.take_profit) msg += `🎯 TP: $${parseFloat(kl.take_profit).toLocaleString()}\n`
+
+    const entry = parseFloat(kl.entry || kl.support || 0)
+    const sl = parseFloat(kl.stop_loss || 0)
+    const tp = parseFloat(kl.take_profit || 0)
+    if (entry && sl && tp) {
+      const rr = Math.abs(tp - entry) / Math.abs(entry - sl)
+      msg += `R:R = 1:${rr.toFixed(1)}\n`
+      const riskAmt = 3 // $100 capital × 3%
+      const slDist = Math.abs(entry - sl)
+      if (slDist > 0) {
+        const posSize = riskAmt / slDist
+        msg += `Position: ${posSize.toFixed(4)} units ($3 risk)\n`
+      }
+    }
+
+    if (raw.trade_checklist?.entry_notes) {
+      msg += `\n📝 ${raw.trade_checklist.entry_notes}\n`
+    }
+
+    msg += `\n<b>Reply /confirm_${symbol} to approve this trade</b>`
+    msg += `\n<b>Reply /reject_${symbol} to skip this trade</b>`
+
+    // Save pending trade to DB
+    const supabase = useDb()
+    await supabase.from('alerts').insert({
+      trading_pair_id: analysis.trading_pair_id,
+      type: 'trade_confirmation',
+      message: JSON.stringify({
+        symbol,
+        signal: analysis.signal,
+        entry: kl.entry,
+        stop_loss: kl.stop_loss,
+        take_profit: kl.take_profit,
+        analysis_id: analysis.id,
+      }),
+      is_triggered: false,
+    })
+
+    return sendMessage(msg, targetChat)
+  }
+
+  async function confirmTrade(symbol: string, chatId: string): Promise<any> {
+    const supabase = useDb()
+
+    // Find pending confirmation
+    const { data: alert } = await supabase
+      .from('alerts')
+      .select('*')
+      .eq('type', 'trade_confirmation')
+      .eq('is_triggered', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (!alert) {
+      return sendMessage(`No pending trade for confirmation.`, chatId)
+    }
+
+    const trade = JSON.parse(alert.message || '{}')
+    if (trade.symbol !== symbol) {
+      return sendMessage(`No pending trade for ${symbol}.`, chatId)
+    }
+
+    // Mark as confirmed
+    await supabase
+      .from('alerts')
+      .update({ is_triggered: true, triggered_at: new Date().toISOString() })
+      .eq('id', alert.id)
+
+    return sendMessage(
+      `✅ <b>TRADE CONFIRMED</b>\n\n` +
+      `${symbol} — ${trade.signal?.replace('_', ' ').toUpperCase()}\n` +
+      `Entry: $${trade.entry}\n` +
+      `SL: $${trade.stop_loss}\n` +
+      `TP: $${trade.take_profit}\n\n` +
+      `📝 Log this trade in your journal!`,
+      chatId,
+    )
+  }
+
+  async function rejectTrade(symbol: string, chatId: string): Promise<any> {
+    const supabase = useDb()
+
+    const { data: alert } = await supabase
+      .from('alerts')
+      .select('*')
+      .eq('type', 'trade_confirmation')
+      .eq('is_triggered', false)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .single()
+
+    if (!alert) {
+      return sendMessage(`No pending trade to reject.`, chatId)
+    }
+
+    // Delete the pending alert
+    await supabase.from('alerts').delete().eq('id', alert.id)
+
+    return sendMessage(`❌ <b>TRADE REJECTED</b> — ${symbol}\nGood discipline! No FOMO.`, chatId)
+  }
+
   return {
     sendMessage,
     getUpdates,
@@ -119,6 +277,9 @@ export function useTelegram() {
     sendAnalysisAlert,
     sendTickerAlert,
     sendMarketSummary,
+    sendTradeConfirmation,
+    confirmTrade,
+    rejectTrade,
     formatAnalysisMessage,
     formatTickerMessage,
     formatMarketSummaryMessage,

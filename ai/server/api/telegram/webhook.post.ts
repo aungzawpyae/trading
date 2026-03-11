@@ -13,23 +13,66 @@ export default defineEventHandler(async (event) => {
   if (text.startsWith('/')) {
     const [command, ...args] = text.split(' ')
 
+    // Handle /confirm_SYMBOL and /reject_SYMBOL
+    if (command.startsWith('/confirm_')) {
+      const symbol = command.replace('/confirm_', '').toUpperCase()
+      await telegram.confirmTrade(symbol, chatId)
+      return { ok: true }
+    }
+
+    if (command.startsWith('/reject_')) {
+      const symbol = command.replace('/reject_', '').toUpperCase()
+      await telegram.rejectTrade(symbol, chatId)
+      return { ok: true }
+    }
+
     switch (command) {
       case '/start':
         await telegram.sendMessage(
           '🤖 <b>Trading AI Bot</b>\n\n' +
-          'Commands:\n' +
+          '<b>Commands:</b>\n' +
           '/price BTCUSDT — Get current price\n' +
           '/analyze BTCUSDT — Run AI analysis\n' +
+          '/analyze BTCUSDT 4h — Analysis with timeframe\n' +
           '/summary — Market summary\n' +
           '/pairs — List tracked pairs\n' +
           '/report — Full report for all pairs\n' +
-          '/chatid — Show your chat ID',
+          '/rules — Show trading rules\n' +
+          '/chatid — Show your chat ID\n\n' +
+          '<b>Trade Confirmation:</b>\n' +
+          '/confirm_BTCUSDT — Approve pending trade\n' +
+          '/reject_BTCUSDT — Reject pending trade\n\n' +
+          '⚠️ AI will ask for confirmation before any trade signal is approved.',
           chatId,
         )
         break
 
       case '/chatid':
         await telegram.sendMessage(`Your Chat ID: <code>${chatId}</code>`, chatId)
+        break
+
+      case '/rules':
+        await telegram.sendMessage(
+          '📋 <b>TRADING RULES</b>\n\n' +
+          '1. SL first, TP second, then Position Size\n' +
+          '2. Write notes — WHY this entry?\n' +
+          '3. NO FOMO — no emotion-based entries\n' +
+          '4. Minimum 1:3 R:R ratio\n' +
+          '5. Max 3% capital risk per trade ($3 on $100)\n' +
+          '6. 3 consecutive losses → STOP & Reset\n\n' +
+          '<b>Entry Checklist:</b>\n' +
+          '• Where is the order flow?\n' +
+          '• Where are sellers/buyers?\n' +
+          '• Who is the loser? Beat the loser\n' +
+          '• Wait for rejection — no entry while price is moving\n' +
+          '• Check retracement type\n\n' +
+          '<b>Remember:</b>\n' +
+          '• The Trend is your best friend\n' +
+          '• Upper wick big = sell pressure\n' +
+          '• Lower wick big = buy support\n' +
+          '• Giant volume candle = future S/R zone',
+          chatId,
+        )
         break
 
       case '/price': {

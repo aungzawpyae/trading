@@ -74,10 +74,35 @@ export interface AnalysisResult {
   signal: Signal
   confidence: number
   summary: string
-  keyLevels: { support: number; resistance: number; stopLoss?: number; takeProfit?: number } | null
+  keyLevels: {
+    support: number
+    resistance: number
+    stopLoss: number
+    takeProfit: number
+    entry: number
+  } | null
   risk: RiskLevel | null
   trend: Trend | null
   timeframeBias: string | null
+  riskRewardRatio: number | null
+  positionSizeAdvice: string | null
+  retracementType: string | null
+  orderFlow: string | null
+  priceAction: {
+    wickAnalysis: string
+    momentumDirection: string
+    volumeSignal: string
+    keyObservation: string
+  } | null
+  tradeChecklist: {
+    slSet: boolean
+    tpSet: boolean
+    rrAbove3: boolean
+    trendAligned: boolean
+    noFomo: boolean
+    rejectionConfirmed: boolean
+    entryNotes: string
+  } | null
 }
 
 export interface MarketSummaryResult {
