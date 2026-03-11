@@ -1,5 +1,3 @@
-import { eq, desc } from 'drizzle-orm'
-import { analyses, tradingPairs } from '../database/schema'
 import { useBinance } from './binance'
 import { useGemini } from './gemini'
 import { useTelegram } from './telegram'
@@ -13,7 +11,7 @@ export function useAnalyzer() {
   const telegram = useTelegram()
 
   async function analyzePair(pairId: string, symbol: string, interval = '1h') {
-    const db = useDb()
+    const supabase = useDb()
     const ticker = await binance.getTicker(symbol)
     const klines = await binance.getKlines(symbol, interval, 100)
     const closes = klines.map((k) => k.close)
@@ -26,17 +24,23 @@ export function useAnalyzer() {
     const result = parseAnalysisResult(rawResult)
     const expiryMinutes = INTERVAL_EXPIRY_MINUTES[interval] || 60
 
-    const [analysis] = await db.insert(analyses).values({
-      tradingPairId: pairId,
-      type: 'technical',
-      interval,
-      signal: result.signal,
-      confidence: String(result.confidence),
-      summary: result.summary,
-      rawResponse: rawResult,
-      indicators: indicators as any,
-      expiresAt: new Date(Date.now() + expiryMinutes * 60 * 1000),
-    }).returning()
+    const { data: analysis, error } = await supabase
+      .from('analyses')
+      .insert({
+        trading_pair_id: pairId,
+        type: 'technical',
+        interval,
+        signal: result.signal,
+        confidence: result.confidence,
+        summary: result.summary,
+        raw_response: rawResult,
+        indicators: indicators as any,
+        expires_at: new Date(Date.now() + expiryMinutes * 60 * 1000).toISOString(),
+      })
+      .select()
+      .single()
+
+    if (error) throw new Error(`Failed to save analysis: ${error.message}`)
 
     // Auto-send to Telegram
     telegram.sendAnalysisAlert(symbol, analysis).catch(() => {})
@@ -45,11 +49,15 @@ export function useAnalyzer() {
   }
 
   async function analyzeAllPairs(interval = '1h') {
-    const db = useDb()
-    const pairs = await db.select().from(tradingPairs).where(eq(tradingPairs.isActive, true))
+    const supabase = useDb()
+    const { data: pairs } = await supabase
+      .from('trading_pairs')
+      .select('*')
+      .eq('is_active', true)
+
     const results = []
 
-    for (const pair of pairs) {
+    for (const pair of pairs || []) {
       try {
         const analysis = await analyzePair(pair.id, pair.symbol, interval)
         results.push(analysis)
@@ -62,18 +70,26 @@ export function useAnalyzer() {
   }
 
   async function generateMarketSummary() {
-    const db = useDb()
-    const pairs = await db.select().from(tradingPairs).where(eq(tradingPairs.isActive, true))
+    const supabase = useDb()
+    const { data: pairs } = await supabase
+      .from('trading_pairs')
+      .select('*')
+      .eq('is_active', true)
+
+    if (!pairs?.length) throw new Error('No active trading pairs found')
+
     const pairData = []
 
     for (const pair of pairs) {
       const ticker = await binance.getTicker(pair.symbol)
 
-      const [latestAnalysis] = await db.select()
-        .from(analyses)
-        .where(eq(analyses.tradingPairId, pair.id))
-        .orderBy(desc(analyses.createdAt))
+      const { data: latestAnalysis } = await supabase
+        .from('analyses')
+        .select('*')
+        .eq('trading_pair_id', pair.id)
+        .order('created_at', { ascending: false })
         .limit(1)
+        .single()
 
       pairData.push({
         symbol: pair.symbol,
@@ -87,19 +103,24 @@ export function useAnalyzer() {
 
     const prompt = buildMarketSummaryPrompt(pairData)
     const rawResult = await gemini.analyze(prompt)
-    const mainPair = pairs[0]
-    if (!mainPair) throw new Error('No active trading pairs found')
+    const mainPair = pairs[0]!
 
-    const [analysis] = await db.insert(analyses).values({
-      tradingPairId: mainPair.id,
-      type: 'market_summary',
-      signal: rawResult.overall_sentiment || 'hold',
-      confidence: String(rawResult.confidence || 0),
-      summary: rawResult.summary || 'Market summary unavailable.',
-      rawResponse: rawResult,
-      indicators: { pairs: pairData } as any,
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000),
-    }).returning()
+    const { data: analysis, error } = await supabase
+      .from('analyses')
+      .insert({
+        trading_pair_id: mainPair.id,
+        type: 'market_summary',
+        signal: rawResult.overall_sentiment || 'hold',
+        confidence: rawResult.confidence || 0,
+        summary: rawResult.summary || 'Market summary unavailable.',
+        raw_response: rawResult,
+        indicators: { pairs: pairData },
+        expires_at: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+      })
+      .select()
+      .single()
+
+    if (error) throw new Error(`Failed to save summary: ${error.message}`)
 
     // Auto-send to Telegram
     telegram.sendMarketSummary(analysis).catch(() => {})

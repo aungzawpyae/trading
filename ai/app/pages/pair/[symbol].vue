@@ -5,7 +5,7 @@ const trading = useTradingStore()
 const selectedInterval = ref('1h')
 const intervals = ['1m', '5m', '15m', '1h', '4h', '1d']
 
-const { data, status, refresh } = await useFetch(`/api/trading/pairs/${symbol}`)
+const { data, status, refresh } = await useFetch<any>(`/api/trading/pairs/${symbol}`)
 
 async function handleAnalyze() {
   await trading.runAnalysis(symbol, selectedInterval.value)
@@ -23,9 +23,9 @@ async function handleAnalyze() {
       <!-- Header -->
       <div class="flex items-center justify-between mb-6">
         <div>
-          <h1 class="text-3xl font-bold">{{ data.pair.baseAsset }}/{{ data.pair.quoteAsset }}</h1>
+          <h1 class="text-3xl font-bold">{{ data.pair?.base_asset }}/{{ data.pair?.quote_asset }}</h1>
           <div class="text-4xl font-mono mt-2">
-            ${{ data.ticker?.price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
+            ${{ data.ticker?.price?.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) }}
           </div>
           <div class="mt-1">
             <span
@@ -85,8 +85,8 @@ async function handleAnalyze() {
           signal: data.latestAnalysis.signal,
           confidence: data.latestAnalysis.confidence ?? 0,
           summary: data.latestAnalysis.summary,
-          rawResponse: data.latestAnalysis.rawResponse,
-          createdAt: data.latestAnalysis.createdAt,
+          rawResponse: data.latestAnalysis.raw_response,
+          createdAt: data.latestAnalysis.created_at,
         }" />
 
         <!-- Indicators -->

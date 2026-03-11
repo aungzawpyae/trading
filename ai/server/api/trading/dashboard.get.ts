@@ -1,12 +1,15 @@
-import { eq, desc } from 'drizzle-orm'
-import { tradingPairs, analyses } from '../../database/schema'
 import { useBinance } from '../../services/binance'
 
 export default defineEventHandler(async () => {
-  const db = useDb()
+  const supabase = useDb()
   const binance = useBinance()
 
-  const pairs = await db.select().from(tradingPairs).where(eq(tradingPairs.isActive, true))
+  const { data: pairs } = await supabase
+    .from('trading_pairs')
+    .select('*')
+    .eq('is_active', true)
+
+  if (!pairs?.length) return { pairs: [] }
 
   const data = await Promise.all(
     pairs.map(async (pair) => {
@@ -15,17 +18,19 @@ export default defineEventHandler(async () => {
         ticker = await binance.getTicker(pair.symbol)
       } catch {}
 
-      const [latestAnalysis] = await db.select()
-        .from(analyses)
-        .where(eq(analyses.tradingPairId, pair.id))
-        .orderBy(desc(analyses.createdAt))
+      const { data: latestAnalysis } = await supabase
+        .from('analyses')
+        .select('*')
+        .eq('trading_pair_id', pair.id)
+        .order('created_at', { ascending: false })
         .limit(1)
+        .single()
 
       return {
         id: pair.id,
         symbol: pair.symbol,
-        baseAsset: pair.baseAsset,
-        quoteAsset: pair.quoteAsset,
+        baseAsset: pair.base_asset,
+        quoteAsset: pair.quote_asset,
         price: ticker?.price ?? 0,
         changePct: ticker?.priceChangePct24h ?? 0,
         high24h: ticker?.high24h ?? 0,
@@ -36,8 +41,8 @@ export default defineEventHandler(async () => {
               signal: latestAnalysis.signal,
               confidence: parseFloat(latestAnalysis.confidence || '0'),
               summary: latestAnalysis.summary,
-              rawResponse: latestAnalysis.rawResponse,
-              createdAt: latestAnalysis.createdAt,
+              rawResponse: latestAnalysis.raw_response,
+              createdAt: latestAnalysis.created_at,
             }
           : null,
       }

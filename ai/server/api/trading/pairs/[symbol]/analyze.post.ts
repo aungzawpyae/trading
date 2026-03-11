@@ -1,5 +1,3 @@
-import { eq } from 'drizzle-orm'
-import { tradingPairs } from '../../../../database/schema'
 import { useAnalyzer } from '../../../../services/analyzer'
 
 export default defineEventHandler(async (event) => {
@@ -7,8 +5,13 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => ({}))
   const interval = body?.interval || '1h'
 
-  const db = useDb()
-  const [pair] = await db.select().from(tradingPairs).where(eq(tradingPairs.symbol, symbol)).limit(1)
+  const supabase = useDb()
+  const { data: pair } = await supabase
+    .from('trading_pairs')
+    .select('*')
+    .eq('symbol', symbol)
+    .single()
+
   if (!pair) throw createError({ statusCode: 404, message: 'Trading pair not found' })
 
   const analyzer = useAnalyzer()

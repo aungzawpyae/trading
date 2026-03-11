@@ -1,5 +1,3 @@
-import { eq } from 'drizzle-orm'
-import { tradingPairs } from '../../database/schema'
 import { useAnalyzer } from '../../services/analyzer'
 import { useTelegram } from '../../services/telegram'
 
@@ -12,7 +10,6 @@ export default defineEventHandler(async (event) => {
   const text = message.text.trim()
   const telegram = useTelegram()
 
-  // Command handler
   if (text.startsWith('/')) {
     const [command, ...args] = text.split(' ')
 
@@ -52,8 +49,13 @@ export default defineEventHandler(async (event) => {
         const symbol = (args[0] || 'BTCUSDT').toUpperCase()
         const interval = args[1] || '1h'
         try {
-          const db = useDb()
-          const [pair] = await db.select().from(tradingPairs).where(eq(tradingPairs.symbol, symbol)).limit(1)
+          const supabase = useDb()
+          const { data: pair } = await supabase
+            .from('trading_pairs')
+            .select('*')
+            .eq('symbol', symbol)
+            .single()
+
           if (!pair) {
             await telegram.sendMessage(`Trading pair ${symbol} not found`, chatId)
             break
@@ -81,22 +83,29 @@ export default defineEventHandler(async (event) => {
       }
 
       case '/pairs': {
-        const db = useDb()
-        const pairs = await db.select().from(tradingPairs).where(eq(tradingPairs.isActive, true))
-        const list = pairs.map((p) => `• ${p.symbol} (${p.baseAsset}/${p.quoteAsset})`).join('\n')
-        await telegram.sendMessage(`📋 <b>Tracked Pairs</b>\n\n${list}`, chatId)
+        const supabase = useDb()
+        const { data: pairs } = await supabase
+          .from('trading_pairs')
+          .select('*')
+          .eq('is_active', true)
+
+        const list = (pairs || []).map((p: any) => `• ${p.symbol} (${p.base_asset}/${p.quote_asset})`).join('\n')
+        await telegram.sendMessage(`📋 <b>Tracked Pairs</b>\n\n${list || 'No pairs found'}`, chatId)
         break
       }
 
       case '/report': {
         const { useBinance } = await import('../../services/binance')
         const binance = useBinance()
-        const db = useDb()
-        const pairs = await db.select().from(tradingPairs).where(eq(tradingPairs.isActive, true))
+        const supabase = useDb()
+        const { data: pairs } = await supabase
+          .from('trading_pairs')
+          .select('*')
+          .eq('is_active', true)
 
         await telegram.sendMessage('⏳ Generating full report...', chatId)
 
-        for (const pair of pairs) {
+        for (const pair of pairs || []) {
           try {
             const ticker = await binance.getTicker(pair.symbol)
             await telegram.sendTickerAlert(pair.symbol, ticker, chatId)

@@ -1,22 +1,18 @@
-import { tradingPairs } from '../../database/schema'
-
 const DEFAULT_PAIRS = [
-  { symbol: 'BTCUSDT', baseAsset: 'BTC', quoteAsset: 'USDT' },
-  { symbol: 'ETHUSDT', baseAsset: 'ETH', quoteAsset: 'USDT' },
-  { symbol: 'SOLUSDT', baseAsset: 'SOL', quoteAsset: 'USDT' },
-  { symbol: 'BNBUSDT', baseAsset: 'BNB', quoteAsset: 'USDT' },
-  { symbol: 'XRPUSDT', baseAsset: 'XRP', quoteAsset: 'USDT' },
+  { symbol: 'BTCUSDT', base_asset: 'BTC', quote_asset: 'USDT' },
+  { symbol: 'ETHUSDT', base_asset: 'ETH', quote_asset: 'USDT' },
+  { symbol: 'SOLUSDT', base_asset: 'SOL', quote_asset: 'USDT' },
+  { symbol: 'BNBUSDT', base_asset: 'BNB', quote_asset: 'USDT' },
+  { symbol: 'XRPUSDT', base_asset: 'XRP', quote_asset: 'USDT' },
 ]
 
 export default defineEventHandler(async () => {
-  const db = useDb()
+  const supabase = useDb()
 
   for (const pair of DEFAULT_PAIRS) {
-    await db.insert(tradingPairs)
-      .values(pair)
-      .onConflictDoNothing({ target: tradingPairs.symbol })
+    await supabase.from('trading_pairs').upsert(pair, { onConflict: 'symbol' })
   }
 
-  const pairs = await db.select().from(tradingPairs)
+  const { data: pairs } = await supabase.from('trading_pairs').select('*')
   return { message: 'Seeded successfully', pairs }
 })

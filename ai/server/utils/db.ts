@@ -1,14 +1,11 @@
-import { drizzle } from 'drizzle-orm/postgres-js'
-import postgres from 'postgres'
-import * as schema from '../database/schema'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 
-let _db: ReturnType<typeof drizzle<typeof schema>> | null = null
+let _supabase: SupabaseClient | null = null
 
-export function useDb() {
-  if (!_db) {
+export function useDb(): SupabaseClient {
+  if (!_supabase) {
     const config = useRuntimeConfig()
-    const client = postgres(config.databaseUrl)
-    _db = drizzle(client, { schema })
+    _supabase = createClient(config.supabaseUrl, config.supabaseKey)
   }
-  return _db
+  return _supabase
 }

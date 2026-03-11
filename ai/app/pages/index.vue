@@ -1,7 +1,7 @@
 <script setup lang="ts">
 const trading = useTradingStore()
 
-const { data: dashboard, status, refresh } = await useFetch('/api/trading/dashboard')
+const { data: dashboard, status, refresh } = await useFetch<any>('/api/trading/dashboard')
 
 watchEffect(() => {
   if (dashboard.value) {

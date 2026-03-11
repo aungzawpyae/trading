@@ -1,17 +1,20 @@
-import { eq, desc } from 'drizzle-orm'
-import { tradingPairs, analyses } from '../../database/schema'
 import { useBinance } from '../../services/binance'
 import { useTelegram } from '../../services/telegram'
 
 export default defineEventHandler(async () => {
-  const db = useDb()
+  const supabase = useDb()
   const binance = useBinance()
   const telegram = useTelegram()
 
-  const pairs = await db.select().from(tradingPairs).where(eq(tradingPairs.isActive, true))
+  const { data: pairs } = await supabase
+    .from('trading_pairs')
+    .select('*')
+    .eq('is_active', true)
+
+  if (!pairs?.length) return { success: false, message: 'No pairs found' }
+
   const results: string[] = []
 
-  // Send header
   await telegram.sendMessage('📊 <b>TRADING AI — Full Report</b>\n' + '─'.repeat(30))
 
   for (const pair of pairs) {
@@ -19,11 +22,13 @@ export default defineEventHandler(async () => {
       const ticker = await binance.getTicker(pair.symbol)
       await telegram.sendTickerAlert(pair.symbol, ticker)
 
-      const [analysis] = await db.select()
-        .from(analyses)
-        .where(eq(analyses.tradingPairId, pair.id))
-        .orderBy(desc(analyses.createdAt))
+      const { data: analysis } = await supabase
+        .from('analyses')
+        .select('*')
+        .eq('trading_pair_id', pair.id)
+        .order('created_at', { ascending: false })
         .limit(1)
+        .single()
 
       if (analysis) {
         await telegram.sendAnalysisAlert(pair.symbol, analysis)

@@ -1,18 +1,22 @@
-import { eq, desc } from 'drizzle-orm'
-import { tradingPairs, analyses } from '../../../../database/schema'
-
 export default defineEventHandler(async (event) => {
   const symbol = getRouterParam(event, 'symbol')!.toUpperCase()
-  const db = useDb()
+  const supabase = useDb()
 
-  const [pair] = await db.select().from(tradingPairs).where(eq(tradingPairs.symbol, symbol)).limit(1)
+  const { data: pair } = await supabase
+    .from('trading_pairs')
+    .select('*')
+    .eq('symbol', symbol)
+    .single()
+
   if (!pair) throw createError({ statusCode: 404, message: 'Trading pair not found' })
 
-  const [analysis] = await db.select()
-    .from(analyses)
-    .where(eq(analyses.tradingPairId, pair.id))
-    .orderBy(desc(analyses.createdAt))
+  const { data: analysis } = await supabase
+    .from('analyses')
+    .select('*')
+    .eq('trading_pair_id', pair.id)
+    .order('created_at', { ascending: false })
     .limit(1)
+    .single()
 
   if (!analysis) throw createError({ statusCode: 404, message: 'No analysis available yet' })
 
@@ -20,7 +24,7 @@ export default defineEventHandler(async (event) => {
     symbol: pair.symbol,
     analysis: {
       ...analysis,
-      isExpired: analysis.expiresAt ? new Date(analysis.expiresAt) < new Date() : false,
+      isExpired: analysis.expires_at ? new Date(analysis.expires_at) < new Date() : false,
     },
   }
 })
