@@ -7,6 +7,7 @@ export default defineNuxtConfig({
 
   runtimeConfig: {
     binanceBaseUrl: process.env.BINANCE_BASE_URL || 'https://api.binance.com',
+    binanceFuturesBaseUrl: process.env.BINANCE_FUTURES_BASE_URL || 'https://fapi.binance.com',
     binanceApiKey: process.env.BINANCE_API_KEY || '',
     binanceApiSecret: process.env.BINANCE_API_SECRET || '',
     geminiApiKey: process.env.GEMINI_API_KEY || '',

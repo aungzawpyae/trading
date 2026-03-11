@@ -57,44 +57,62 @@ export default defineEventHandler(async (event) => {
         try {
           const { useBinance } = await import('../../services/binance')
           const binance = useBinance()
-          const account = await binance.getAccountInfo()
-          const permissions = await binance.getApiKeyPermissions().catch(() => null)
 
-          let totalUsdt = 0
-          const balanceLines: string[] = []
+          const [spotAccount, futuresAccount] = await Promise.all([
+            binance.getAccountInfo().catch(() => null),
+            binance.getFuturesAccount().catch(() => null),
+          ])
 
-          for (const bal of account.balances) {
-            if (['USDT', 'BUSD', 'FDUSD'].includes(bal.asset)) {
-              totalUsdt += bal.total
-              balanceLines.push(`  ${bal.asset}: $${bal.total.toFixed(2)}`)
-            } else if (bal.total > 0) {
-              try {
-                const ticker = await binance.getTicker(`${bal.asset}USDT`)
-                const usdValue = bal.total * ticker.price
-                totalUsdt += usdValue
-                balanceLines.push(`  ${bal.asset}: ${bal.total.toFixed(6)} (~$${usdValue.toFixed(2)})`)
-              } catch {
-                balanceLines.push(`  ${bal.asset}: ${bal.total.toFixed(6)}`)
+          let msg = `💰 <b>Account Info (Demo)</b>\n`
+          msg += `${'─'.repeat(25)}\n\n`
+
+          // Spot
+          let spotTotal = 0
+          if (spotAccount) {
+            msg += `📊 <b>SPOT</b>\n`
+            for (const bal of spotAccount.balances) {
+              if (['USDT', 'BUSD', 'FDUSD'].includes(bal.asset)) {
+                spotTotal += bal.total
+                msg += `  ${bal.asset}: $${bal.total.toFixed(2)}\n`
+              } else if (bal.total > 0) {
+                try {
+                  const ticker = await binance.getTicker(`${bal.asset}USDT`)
+                  const usdVal = bal.total * ticker.price
+                  spotTotal += usdVal
+                  msg += `  ${bal.asset}: ${bal.total.toFixed(6)} (~$${usdVal.toFixed(2)})\n`
+                } catch {
+                  msg += `  ${bal.asset}: ${bal.total.toFixed(6)}\n`
+                }
               }
             }
+            msg += `  <b>Spot Total: ~$${spotTotal.toFixed(2)}</b>\n\n`
           }
 
-          let msg = `💰 <b>Account Info</b>\n\n`
-          msg += `Type: ${account.accountType}\n`
-          msg += `Can Trade: ${account.canTrade ? '✅' : '❌'}\n\n`
+          // Futures
+          if (futuresAccount) {
+            msg += `📈 <b>FUTURES</b>\n`
+            msg += `  Wallet: $${futuresAccount.totalWalletBalance.toFixed(2)}\n`
+            msg += `  Available: $${futuresAccount.availableBalance.toFixed(2)}\n`
+            msg += `  Unrealized PnL: $${futuresAccount.totalUnrealizedProfit.toFixed(2)}\n`
 
-          if (permissions) {
-            msg += `<b>API Permissions:</b>\n`
-            msg += `  Spot Trading: ${permissions.enableSpotAndMarginTrading ? '✅' : '❌'}\n`
-            msg += `  Futures: ${permissions.enableFutures ? '✅' : '❌'}\n`
-            msg += `  Reading: ${permissions.enableReading ? '✅' : '❌'}\n`
-            msg += `  Withdrawals: ${permissions.enableWithdrawals ? '✅' : '❌'}\n\n`
+            if (futuresAccount.positions.length > 0) {
+              msg += `\n  <b>Open Positions:</b>\n`
+              for (const pos of futuresAccount.positions) {
+                const side = pos.positionAmt > 0 ? 'LONG' : 'SHORT'
+                const pnlEmoji = pos.unrealizedProfit >= 0 ? '🟢' : '🔴'
+                msg += `  ${pnlEmoji} ${pos.symbol} ${side} ${pos.leverage}x\n`
+                msg += `    Entry: $${pos.entryPrice} | Mark: $${pos.markPrice}\n`
+                msg += `    PnL: $${pos.unrealizedProfit.toFixed(2)}\n`
+              }
+            }
+            msg += `  <b>Futures Total: $${futuresAccount.totalWalletBalance.toFixed(2)}</b>\n\n`
           }
 
-          msg += `<b>Balances:</b>\n`
-          msg += balanceLines.length ? balanceLines.join('\n') : '  No balances'
-          msg += `\n\n<b>Total: ~$${totalUsdt.toFixed(2)} USDT</b>`
-          msg += `\n3% Risk = $${(totalUsdt * 0.03).toFixed(2)} per trade`
+          // Combined
+          const combined = spotTotal + (futuresAccount?.totalWalletBalance || 0)
+          msg += `${'─'.repeat(25)}\n`
+          msg += `💎 <b>Total: ~$${combined.toFixed(2)} USDT</b>\n`
+          msg += `⚠️ <b>3% Risk = $${(combined * 0.03).toFixed(2)} per trade</b>`
 
           await telegram.sendMessage(msg, chatId)
         } catch (err: any) {
