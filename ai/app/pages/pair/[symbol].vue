@@ -122,11 +122,22 @@ async function handleAnalyze() {
       <!-- Indicators (collapsible) -->
       <details v-if="data.latestAnalysis?.indicators" class="mt-4">
         <summary class="text-sm text-gray-500 cursor-pointer hover:text-gray-300">Technical Indicators</summary>
-        <div class="mt-2 bg-gray-800 rounded-lg border border-gray-700 p-4 grid grid-cols-2 md:grid-cols-4 gap-3">
-          <div v-for="(value, key) in data.latestAnalysis.indicators" :key="key" class="text-xs">
-            <span class="text-gray-500">{{ String(key).replace(/_/g, ' ').toUpperCase() }}:</span>
-            <span class="text-gray-300 ml-1">{{ typeof value === 'object' ? JSON.stringify(value) : value }}</span>
-          </div>
+        <div class="mt-2 bg-gray-800 rounded-lg border border-gray-700 p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+          <template v-for="(value, key) in data.latestAnalysis.indicators" :key="key">
+            <!-- Simple value -->
+            <div v-if="typeof value !== 'object' || value === null" class="text-xs">
+              <span class="text-gray-500">{{ String(key).replace(/_/g, ' ').toUpperCase() }}</span>
+              <div class="text-gray-300 font-mono">{{ value ?? '-' }}</div>
+            </div>
+            <!-- Object value - show each sub-field -->
+            <div v-else class="text-xs bg-gray-900 rounded p-2">
+              <span class="text-gray-500 font-bold block mb-1">{{ String(key).replace(/_/g, ' ').toUpperCase() }}</span>
+              <div v-for="(subVal, subKey) in value" :key="subKey" class="flex justify-between gap-2">
+                <span class="text-gray-500 truncate">{{ String(subKey).replace(/_/g, ' ') }}</span>
+                <span class="text-gray-300 font-mono text-right">{{ typeof subVal === 'number' ? subVal.toLocaleString(undefined, { maximumFractionDigits: 2 }) : subVal }}</span>
+              </div>
+            </div>
+          </template>
         </div>
       </details>
 
