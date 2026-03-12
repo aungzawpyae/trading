@@ -44,6 +44,9 @@ onUnmounted(() => {
     <div class="flex items-center justify-between mb-6">
       <h1 class="text-2xl font-bold">Trading AI Dashboard</h1>
       <div class="flex gap-3">
+        <NuxtLink to="/markets" class="text-sm bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded transition">
+          Markets
+        </NuxtLink>
         <NuxtLink to="/journal" class="text-sm bg-gray-700 hover:bg-gray-600 px-4 py-2 rounded transition">
           Trade Journal
         </NuxtLink>
