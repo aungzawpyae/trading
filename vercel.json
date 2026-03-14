@@ -1,3 +1,13 @@
 {
-  "regions": ["sin1"]
+  "regions": ["sin1"],
+  "crons": [
+    {
+      "path": "/api/cron/trade-scan",
+      "schedule": "*/15 * * * *"
+    },
+    {
+      "path": "/api/cron/check-positions",
+      "schedule": "*/5 * * * *"
+    }
+  ]
 }

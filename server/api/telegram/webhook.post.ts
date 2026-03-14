@@ -35,7 +35,12 @@ export default defineEventHandler(async (event) => {
           '/analyze BTCUSDT — AI analysis\n' +
           '/analyze BTCUSDT 4h — With timeframe\n' +
           '/summary — Market summary\n\n' +
-          '<b>Auto Trading:</b>\n' +
+          '<b>Auto Trading Bot:</b>\n' +
+          '/bot_start — Start auto-trading bot\n' +
+          '/bot_start 15m — Start with timeframe\n' +
+          '/bot_stop — Stop auto-trading bot\n' +
+          '/bot_status — Bot status & today stats\n\n' +
+          '<b>Manual Trading:</b>\n' +
           '/trade BTCUSDT — Auto analyze + execute trade\n' +
           '/trade BTCUSDT 4h — With timeframe\n' +
           '/trade_all — Scan & trade all pairs\n' +
@@ -243,6 +248,113 @@ export default defineEventHandler(async (event) => {
           await telegram.sendMessage(msg, chatId)
         } catch (err: any) {
           await telegram.sendMessage(`Journal failed: ${err.message}`, chatId)
+        }
+        break
+      }
+
+      case '/bot_start': {
+        const botInterval = args[0] || '15m'
+        try {
+          const supabase = useDb()
+          await supabase.from('bot_config').upsert({
+            key: 'auto_trade',
+            enabled: true,
+            value: { interval: botInterval, started_at: new Date().toISOString() },
+          }, { onConflict: 'key' })
+
+          await telegram.sendMessage(
+            `🤖 <b>AUTO-TRADE BOT STARTED</b>\n\n` +
+            `Interval: ${botInterval}\n` +
+            `Scan: Every 15 min\n` +
+            `Position Check: Every 5 min\n` +
+            `Mode: Fully autonomous (demo)\n\n` +
+            `The bot will now automatically:\n` +
+            `• Scan all pairs every 15 min\n` +
+            `• Execute trades when signals found\n` +
+            `• Monitor & close positions on SL/TP\n\n` +
+            `Use /bot_stop to pause`,
+            chatId,
+          )
+        } catch (err: any) {
+          await telegram.sendMessage(`Bot start failed: ${err.message}`, chatId)
+        }
+        break
+      }
+
+      case '/bot_stop': {
+        try {
+          const supabase = useDb()
+          await supabase.from('bot_config').upsert({
+            key: 'auto_trade',
+            enabled: false,
+            value: { stopped_at: new Date().toISOString() },
+          }, { onConflict: 'key' })
+
+          await telegram.sendMessage(
+            `⏹️ <b>AUTO-TRADE BOT STOPPED</b>\n\n` +
+            `Bot will no longer scan or execute trades.\n` +
+            `Open positions remain active (SL/TP still on Binance).\n\n` +
+            `Use /bot_start to resume`,
+            chatId,
+          )
+        } catch (err: any) {
+          await telegram.sendMessage(`Bot stop failed: ${err.message}`, chatId)
+        }
+        break
+      }
+
+      case '/bot_status': {
+        try {
+          const supabase = useDb()
+          const { data: config } = await supabase
+            .from('bot_config')
+            .select('*')
+            .eq('key', 'auto_trade')
+            .single()
+
+          const isRunning = config?.enabled === true
+          const interval = config?.value?.interval || '15m'
+          const startedAt = config?.value?.started_at
+          const stoppedAt = config?.value?.stopped_at
+
+          // Get open positions count
+          const { useBinance } = await import('../../services/binance')
+          const binance = useBinance()
+          const positions = await binance.getFuturesPositions()
+
+          // Get today's trade stats
+          const today = new Date()
+          today.setHours(0, 0, 0, 0)
+          const { data: todayTrades } = await supabase
+            .from('trade_journal')
+            .select('result, pnl')
+            .gte('opened_at', today.toISOString())
+
+          const wins = (todayTrades || []).filter((t: any) => t.result === 'win').length
+          const losses = (todayTrades || []).filter((t: any) => t.result === 'loss').length
+          const todayPnl = (todayTrades || []).reduce((s: number, t: any) => s + (parseFloat(t.pnl) || 0), 0)
+
+          let msg = `🤖 <b>BOT STATUS</b>\n${'─'.repeat(25)}\n\n`
+          msg += `Status: ${isRunning ? '🟢 RUNNING' : '🔴 STOPPED'}\n`
+          msg += `Timeframe: ${interval}\n`
+          msg += `Scan: Every 15 min\n`
+          msg += `Position Check: Every 5 min\n`
+
+          if (isRunning && startedAt) {
+            msg += `Started: ${new Date(startedAt).toLocaleString()}\n`
+          }
+          if (!isRunning && stoppedAt) {
+            msg += `Stopped: ${new Date(stoppedAt).toLocaleString()}\n`
+          }
+
+          msg += `\n📊 <b>Today's Stats</b>\n`
+          msg += `Trades: ${(todayTrades || []).length} (${wins}W / ${losses}L)\n`
+          msg += `PnL: $${todayPnl.toFixed(2)}\n`
+          msg += `Open Positions: ${positions.length}\n`
+
+          await telegram.sendMessage(msg, chatId)
+        } catch (err: any) {
+          await telegram.sendMessage(`Bot status failed: ${err.message}`, chatId)
         }
         break
       }

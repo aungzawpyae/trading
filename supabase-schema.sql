@@ -116,3 +116,11 @@ CREATE TABLE trade_journal (
 CREATE INDEX journal_symbol_status ON trade_journal(symbol, status);
 CREATE INDEX journal_opened_at ON trade_journal(opened_at);
 CREATE INDEX journal_result ON trade_journal(result);
+
+-- Bot Configuration (auto-trade scheduler state)
+CREATE TABLE bot_config (
+  key VARCHAR(50) PRIMARY KEY,
+  enabled BOOLEAN NOT NULL DEFAULT false,
+  value JSONB DEFAULT '{}',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
