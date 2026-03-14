@@ -28,7 +28,7 @@ const error = ref('')
 const success = ref('')
 
 // Position data
-const { data: posData, refresh: refreshPosition } = await useFetch<any>(
+const { data: posData, refresh: refreshPosition } = useLazyFetch<any>(
   `/api/trading/position/${props.symbol}`,
 )
 
