@@ -83,66 +83,82 @@ async function handleAnalyze() {
         </div>
       </div>
 
-      <!-- Quick Trade Info Bar -->
-      <div v-if="data.latestAnalysis?.raw_response?.key_levels" class="bg-gray-800 rounded-lg border border-gray-700 p-4 mb-6 flex flex-wrap gap-6 items-center text-sm">
-        <div v-if="data.latestAnalysis.raw_response.key_levels.entry">
-          <span class="text-gray-500 text-xs">Entry</span>
-          <div class="font-mono text-blue-400">${{ parseFloat(data.latestAnalysis.raw_response.key_levels.entry).toLocaleString() }}</div>
-        </div>
-        <div v-if="data.latestAnalysis.raw_response.key_levels.stop_loss">
-          <span class="text-gray-500 text-xs">SL</span>
-          <div class="font-mono text-red-400">${{ parseFloat(data.latestAnalysis.raw_response.key_levels.stop_loss).toLocaleString() }}</div>
-        </div>
-        <div v-if="data.latestAnalysis.raw_response.key_levels.take_profit">
-          <span class="text-gray-500 text-xs">TP</span>
-          <div class="font-mono text-emerald-400">${{ parseFloat(data.latestAnalysis.raw_response.key_levels.take_profit).toLocaleString() }}</div>
-        </div>
-        <div v-if="data.latestAnalysis.raw_response?.trend">
-          <span class="text-gray-500 text-xs">Trend</span>
-          <div class="capitalize">{{ data.latestAnalysis.raw_response.trend }}</div>
-        </div>
-        <div v-if="data.latestAnalysis.raw_response?.retracement_type && data.latestAnalysis.raw_response.retracement_type !== 'none'">
-          <span class="text-gray-500 text-xs">Retracement</span>
-          <div class="capitalize">{{ data.latestAnalysis.raw_response.retracement_type.replace('_', ' ') }}</div>
-        </div>
-      </div>
-
-      <!-- Full Analysis Detail -->
-      <div v-if="data.latestAnalysis" class="bg-gray-800 rounded-lg border border-gray-700 p-6">
-        <h2 class="text-lg font-bold mb-4">AI Analysis</h2>
-        <AnalysisPanel :analysis="{
-          signal: data.latestAnalysis.signal,
-          confidence: data.latestAnalysis.confidence ?? 0,
-          summary: data.latestAnalysis.summary,
-          rawResponse: data.latestAnalysis.raw_response,
-          createdAt: data.latestAnalysis.created_at,
-        }" />
-      </div>
-
-      <!-- Indicators (collapsible) -->
-      <details v-if="data.latestAnalysis?.indicators" class="mt-4">
-        <summary class="text-sm text-gray-500 cursor-pointer hover:text-gray-300">Technical Indicators</summary>
-        <div class="mt-2 bg-gray-800 rounded-lg border border-gray-700 p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
-          <template v-for="(value, key) in data.latestAnalysis.indicators" :key="key">
-            <!-- Simple value -->
-            <div v-if="typeof value !== 'object' || value === null" class="text-xs">
-              <span class="text-gray-500">{{ String(key).replace(/_/g, ' ').toUpperCase() }}</span>
-              <div class="text-gray-300 font-mono">{{ value ?? '-' }}</div>
+      <!-- Main Content: 2-column layout -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 mb-6">
+        <!-- Left: Analysis (2 cols) -->
+        <div class="lg:col-span-2 space-y-4">
+          <!-- Quick Trade Info Bar -->
+          <div v-if="data.latestAnalysis?.raw_response?.key_levels" class="bg-gray-800 rounded-lg border border-gray-700 p-4 flex flex-wrap gap-6 items-center text-sm">
+            <div v-if="data.latestAnalysis.raw_response.key_levels.entry">
+              <span class="text-gray-500 text-xs">Entry</span>
+              <div class="font-mono text-blue-400">${{ parseFloat(data.latestAnalysis.raw_response.key_levels.entry).toLocaleString() }}</div>
             </div>
-            <!-- Object value - show each sub-field -->
-            <div v-else class="text-xs bg-gray-900 rounded p-2">
-              <span class="text-gray-500 font-bold block mb-1">{{ String(key).replace(/_/g, ' ').toUpperCase() }}</span>
-              <div v-for="(subVal, subKey) in value" :key="subKey" class="flex justify-between gap-2">
-                <span class="text-gray-500 truncate">{{ String(subKey).replace(/_/g, ' ') }}</span>
-                <span class="text-gray-300 font-mono text-right">{{ typeof subVal === 'number' ? subVal.toLocaleString(undefined, { maximumFractionDigits: 2 }) : subVal }}</span>
-              </div>
+            <div v-if="data.latestAnalysis.raw_response.key_levels.stop_loss">
+              <span class="text-gray-500 text-xs">SL</span>
+              <div class="font-mono text-red-400">${{ parseFloat(data.latestAnalysis.raw_response.key_levels.stop_loss).toLocaleString() }}</div>
             </div>
-          </template>
-        </div>
-      </details>
+            <div v-if="data.latestAnalysis.raw_response.key_levels.take_profit">
+              <span class="text-gray-500 text-xs">TP</span>
+              <div class="font-mono text-emerald-400">${{ parseFloat(data.latestAnalysis.raw_response.key_levels.take_profit).toLocaleString() }}</div>
+            </div>
+            <div v-if="data.latestAnalysis.raw_response?.trend">
+              <span class="text-gray-500 text-xs">Trend</span>
+              <div class="capitalize">{{ data.latestAnalysis.raw_response.trend }}</div>
+            </div>
+            <div v-if="data.latestAnalysis.raw_response?.retracement_type && data.latestAnalysis.raw_response.retracement_type !== 'none'">
+              <span class="text-gray-500 text-xs">Retracement</span>
+              <div class="capitalize">{{ data.latestAnalysis.raw_response.retracement_type.replace('_', ' ') }}</div>
+            </div>
+          </div>
 
-      <div v-else class="bg-gray-800 rounded-lg border border-gray-700 p-6 text-center text-gray-400">
-        No analysis yet. Click "Run Analysis" to get AI insights.
+          <!-- Full Analysis Detail -->
+          <div v-if="data.latestAnalysis" class="bg-gray-800 rounded-lg border border-gray-700 p-6">
+            <h2 class="text-lg font-bold mb-4">AI Analysis</h2>
+            <AnalysisPanel :analysis="{
+              signal: data.latestAnalysis.signal,
+              confidence: data.latestAnalysis.confidence ?? 0,
+              summary: data.latestAnalysis.summary,
+              rawResponse: data.latestAnalysis.raw_response,
+              createdAt: data.latestAnalysis.created_at,
+            }" />
+          </div>
+
+          <!-- Indicators (collapsible) -->
+          <details v-if="data.latestAnalysis?.indicators">
+            <summary class="text-sm text-gray-500 cursor-pointer hover:text-gray-300">Technical Indicators</summary>
+            <div class="mt-2 bg-gray-800 rounded-lg border border-gray-700 p-4 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+              <template v-for="(value, key) in data.latestAnalysis.indicators" :key="key">
+                <div v-if="typeof value !== 'object' || value === null" class="text-xs">
+                  <span class="text-gray-500">{{ String(key).replace(/_/g, ' ').toUpperCase() }}</span>
+                  <div class="text-gray-300 font-mono">{{ value ?? '-' }}</div>
+                </div>
+                <div v-else class="text-xs bg-gray-900 rounded p-2">
+                  <span class="text-gray-500 font-bold block mb-1">{{ String(key).replace(/_/g, ' ').toUpperCase() }}</span>
+                  <div v-for="(subVal, subKey) in value" :key="subKey" class="flex justify-between gap-2">
+                    <span class="text-gray-500 truncate">{{ String(subKey).replace(/_/g, ' ') }}</span>
+                    <span class="text-gray-300 font-mono text-right">{{ typeof subVal === 'number' ? subVal.toLocaleString(undefined, { maximumFractionDigits: 2 }) : subVal }}</span>
+                  </div>
+                </div>
+              </template>
+            </div>
+          </details>
+
+          <div v-if="!data.latestAnalysis" class="bg-gray-800 rounded-lg border border-gray-700 p-6 text-center text-gray-400">
+            No analysis yet. Click "Run Analysis" to get AI insights.
+          </div>
+        </div>
+
+        <!-- Right: Trading Panel (1 col) -->
+        <div>
+          <h2 class="text-lg font-bold mb-4">Trade</h2>
+          <TradingPanel
+            :symbol="symbol"
+            :current-price="data.ticker?.price || 0"
+            :analysis-levels="data.latestAnalysis?.raw_response?.key_levels || null"
+            :analysis-signal="data.latestAnalysis?.signal || null"
+            @traded="refresh()"
+          />
+        </div>
       </div>
     </div>
   </div>
